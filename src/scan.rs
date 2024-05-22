@@ -7,6 +7,7 @@ use js_sys::Uint8Array;
 use std::sync::Arc;
 use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
 use web_sys::{
     Blob, CanvasRenderingContext2d, HtmlCanvasElement, HtmlVideoElement, MediaStream,
     MediaStreamConstraints, MediaStreamTrack, MediaTrackConstraints, VideoFacingModeEnum,
@@ -22,6 +23,7 @@ pub struct Scanner {
     resolution: (u32, u32),
     is_scanning: bool,
     detected_code: Option<String>,
+    is_flashlight_on: bool,
 }
 
 pub enum ScannerMessage {
@@ -32,6 +34,7 @@ pub enum ScannerMessage {
     ToggleScanner,
     CloseScanner,
     CodeDetected(String),
+    ToggleFlashlight,
 }
 
 #[derive(Properties, PartialEq, Clone)]
@@ -58,26 +61,70 @@ impl Component for Scanner {
             resolution: (512, 512),
             is_scanning: false,
             detected_code: None,
+            is_flashlight_on: false,
         }
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
         let toggle_scanner = ctx.link().callback(|_| ScannerMessage::ToggleScanner);
         let close_scanner = ctx.link().callback(|_| ScannerMessage::CloseScanner);
+        let toggle_flashlight = ctx.link().callback(|_| ScannerMessage::ToggleFlashlight); // Add this line
         html! {
             <>
-                // if scanner is not scanning, show the start scanner button
-                // else show the close scanner button
-                if !self.is_scanning {
-                    <button onclick={toggle_scanner}>{ "Start Scanner" }</button>
-                } else {
-                    <button onclick={close_scanner}>{ "Stop Scanner" }</button>
-                }
-                if self.is_scanning {
-                    <div>
+                <style>
+                    {"
+                        .modal {
+                            display: block;
+                            position: fixed;
+                            z-index: 1;
+                            padding-top: 200px;
+                            left: 0;
+                            top: 0;
+                            width: 100%;
+                            height: 100%;
+                            overflow: auto;
+                            background-color: rgb(0,0,0);
+                            background-color: rgba(0,0,0,0.4);
+                        }
+                        .modal-content {
+                            background-color: #fefefe;
+                            margin: auto;
+                            padding: 5px;
+                            border: 1px solid #888;
+                            width: 80%;
+                            max-width: 300px;
+                        }
+                        .close {
+                            color: #aaa;
+                            float: right;
+                            font-size: 34px;
+                            font-weight: bold;
+                        }
+                        .close:hover,
+                        .close:focus {
+                            color: black;
+                            text-decoration: none;
+                            cursor: pointer;
+                        }
+                    "}
+                </style>
+                // Button to start or stop the scanner
+            if !self.is_scanning {
+                <button onclick={toggle_scanner}>{ "Start Scanner" }</button>
+            } else {
+                <button onclick={&close_scanner}>{ "Stop Scanner" }</button>
+            }
+
+            // Modal for the scanner
+            if self.is_scanning {
+                <div class="modal">
+                    <div class="modal-content">
+                    <button onclick={&toggle_flashlight}>{ if self.is_flashlight_on { "Turn off Flashlight" } else { "Turn on Flashlight" } }</button> // Add this line
+                        <span class="close" onclick={&close_scanner}>{ "×" }</span>
                         <video ref={&self.video_ref} autoPlay="true" style="width:300px;height:300px;" />
                         <canvas ref={&self.canvas_ref} width={self.resolution.0.to_string()} height={self.resolution.1.to_string()} style="display: none;"></canvas>
                     </div>
+                </div>
                 }
             </>
         }
@@ -95,14 +142,16 @@ impl Component for Scanner {
         let mut video_height = video.video_height();
         let mut video_width = video.video_width();
 
-        if video_height > 800 || video_width > 800 {
+        let max_resolution = 800;
+
+        if video_height > max_resolution || video_width > max_resolution {
             let ratio = video_width as f64 / video_height as f64;
             if video_height > video_width {
-                video_height = 800;
-                video_width = (800.0 * ratio) as u32;
+                video_height = max_resolution;
+                video_width = (max_resolution as f64 * ratio) as u32;
             } else {
-                video_width = 800;
-                video_height = (800.0 / ratio) as u32;
+                video_width = max_resolution;
+                video_height = (max_resolution as f64 / ratio) as u32;
             }
         }
 
@@ -193,9 +242,22 @@ impl Component for Scanner {
                 ctx.link().send_future(async {
                     let mut constraints = MediaStreamConstraints::new();
                     let mut video_constraints = MediaTrackConstraints::new();
+
+                    let advanced_constraints = js_sys::Array::new();
+                    let torch_constraint = js_sys::Object::new();
+                    js_sys::Reflect::set(
+                        &torch_constraint,
+                        &JsValue::from_str("torch"),
+                        &JsValue::from_bool(false),
+                    )
+                    .unwrap();
+                    advanced_constraints.push(&torch_constraint);
+                    video_constraints.advanced(&advanced_constraints);
+
                     video_constraints
                         .facing_mode(&VideoFacingModeEnum::Environment.into())
                         .frame_rate(&20.into());
+
                     constraints.video(&video_constraints);
                     match window().navigator().media_devices() {
                         Ok(devs) => match devs.get_user_media_with_constraints(&constraints) {
@@ -232,7 +294,36 @@ impl Component for Scanner {
                 self.is_scanning = false;
                 self.stream = None;
                 self.scanner_interval = None;
+                self.is_flashlight_on = false;
                 ctx.props().onclose.emit(());
+                true
+            }
+            ScannerMessage::ToggleFlashlight => {
+                if let Some(stream) = &self.stream {
+                    let track = stream
+                        .get_video_tracks()
+                        .get(0)
+                        .dyn_into::<MediaStreamTrack>();
+                    let constraints = js_sys::Object::new();
+                    js_sys::Reflect::set(
+                        &constraints,
+                        &JsValue::from_str("torch"),
+                        &JsValue::from_bool(!self.is_flashlight_on),
+                    )
+                    .unwrap();
+                    let advanced_constraints = js_sys::Array::new();
+                    advanced_constraints.push(&constraints);
+                    let mut video_constraints = MediaTrackConstraints::new();
+                    video_constraints
+                        .advanced(&advanced_constraints)
+                        .facing_mode(&VideoFacingModeEnum::Environment.into())
+                        .frame_rate(&20.into());
+                    let _ = track
+                        .expect("Cannot apply constrait")
+                        .apply_constraints_with_constraints(&video_constraints)
+                        .unwrap();
+                    self.is_flashlight_on = !self.is_flashlight_on;
+                }
                 true
             }
         }
