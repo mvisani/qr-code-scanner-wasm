@@ -15,7 +15,6 @@ pub struct Scanner {
     canvas_ref: NodeRef,
     stream: Option<MediaStream>,
     is_scanning: bool,
-    detected_code: Option<String>,
     is_flashlight_on: bool,
     interval: Option<Interval>,
 }
@@ -26,7 +25,6 @@ pub enum ScannerMessage {
     Error(JsError),
     ToggleScanner,
     CloseScanner,
-    CodeDetected(rxing::RXingResult),
     ToggleFlashlight,
     VideoTimeUpdate,
 }
@@ -73,13 +71,11 @@ impl Component for Scanner {
     type Properties = ScannerProps;
 
     fn create(_ctx: &Context<Self>) -> Self {
-        log::info!("Creating scanner component");
         Self {
             video_ref: NodeRef::default(),
             canvas_ref: NodeRef::default(),
             stream: None,
             is_scanning: false,
-            detected_code: None,
             is_flashlight_on: false,
             interval: None,
         }
@@ -91,7 +87,6 @@ impl Component for Scanner {
         let close_scanner = ctx.link().callback(|_| ScannerMessage::CloseScanner);
         let toggle_flashlight = ctx.link().callback(|_| ScannerMessage::ToggleFlashlight);
         let (video_width, video_height) = self.get_resolution();
-        log::info!("Canvas width: {} height: {}", video_width, video_height);
         html! {
             <>
                 <style>
@@ -158,7 +153,6 @@ impl Component for Scanner {
                 if self.interval.is_some() {
                     return false;
                 }
-                log::info!("Starting interval");
                 let link = ctx.link().clone();
                 self.interval = Some(Interval::new(ctx.props().refresh_milliseconds, move || {
                     link.send_message(ScannerMessage::CapturedImage);
@@ -182,7 +176,6 @@ impl Component for Scanner {
                 }
 
                 let (video_width, video_height) = self.get_resolution();
-                log::info!("Capturing image");
 
                 let canvas = self
                     .canvas_ref
@@ -202,7 +195,7 @@ impl Component for Scanner {
                 match context.draw_image_with_html_video_element(&video, 0.0, 0.0) {
                     Ok(_) => {}
                     Err(e) => {
-                        log::error!("Error: {:?}", e);
+                        log::error!("{:?}", e);
                         return true;
                     }
                 }
@@ -212,16 +205,11 @@ impl Component for Scanner {
                     {
                         Ok(image_data) => image_data,
                         Err(error) => {
-                            log::error!("Error: {:?}", error);
+                            log::error!("{:?}", error);
                             return true;
                         }
                     };
 
-                log::info!(
-                    "IMAGE SIZE : {} x {}",
-                    image_data.width(),
-                    image_data.height()
-                );
                 let decode_result = decode_barcode(
                     convert_js_image_to_luma(image_data.data().as_ref()),
                     image_data.width(),
@@ -231,9 +219,7 @@ impl Component for Scanner {
                 );
                 match decode_result {
                     Ok(s) => {
-                        ctx.props().onscan.emit(s.clone());
-                        ctx.link()
-                            .send_message(ScannerMessage::CodeDetected(s.clone()));
+                        ctx.props().onscan.emit(s);
                         ctx.link().send_message(ScannerMessage::CloseScanner);
                     }
                     Err(e) => {
@@ -285,10 +271,6 @@ impl Component for Scanner {
                     }
                 });
                 self.is_scanning = !self.is_scanning;
-                true
-            }
-            ScannerMessage::CodeDetected(code) => {
-                self.detected_code = Some(code.getText().to_string());
                 true
             }
             ScannerMessage::CloseScanner => {
