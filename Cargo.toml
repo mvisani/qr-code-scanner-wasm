@@ -6,6 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rxing = { version = "0.5.9", features = [
+    "wasm_support",
+], default-features = false }
+
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 yew = "0.19"
@@ -21,13 +25,12 @@ web-sys = { version = "0.3", features = [
     "VideoFacingModeEnum",
     "MediaStreamTrack",
     "Navigator",
+    "ImageData",
 ] }
 js-sys = "0.3"
-bardecoder = "0.5"
 wasm-logger = "0.2.0"
 log = "0.4.21"
 base64 = "0.22.1"
 image = "0.24"
-
 [package.metadata.docs.rs]
 default-target = "wasm32-unknown-unknown"

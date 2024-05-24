@@ -2,6 +2,7 @@ use gloo::utils::errors::JsError;
 use yew::prelude::*;
 
 pub mod scan;
+pub mod wasm_rxing;
 use crate::scan::Scanner;
 
 #[function_component(App)]
@@ -9,8 +10,8 @@ fn app() -> Html {
     let value = use_state(String::new);
     let on_scan = {
         let value = value.clone();
-        Callback::from(move |s: String| {
-            value.set(s);
+        Callback::from(move |s: rxing::RXingResult| {
+            value.set(s.getText().to_string());
         })
     };
 
