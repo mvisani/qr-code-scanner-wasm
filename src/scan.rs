@@ -89,56 +89,21 @@ impl Component for Scanner {
         let (video_width, video_height) = self.get_resolution();
         html! {
             <>
-                <style>
-                    {"
-                        .modal {
-                            display: block;
-                            position: fixed;
-                            z-index: 1;
-                            padding-top: 200px;
-                            left: 0;
-                            top: 0;
-                            width: 100%;
-                            height: 100%;
-                            overflow: auto;
-                            background-color: rgb(0,0,0);
-                            background-color: rgba(0,0,0,0.4);
-                        }
-                        .modal-content {
-                            background-color: #fefefe;
-                            margin: auto;
-                            padding: 5px;
-                            border: 1px solid #888;
-                            width: 80%;
-                            max-width: 300px;
-                        }
-                        .close {
-                            color: #aaa;
-                            float: right;
-                            font-size: 34px;
-                            font-weight: bold;
-                        }
-                        .close:hover,
-                        .close:focus {
-                            color: black;
-                            text-decoration: none;
-                            cursor: pointer;
-                        }
-                    "}
-                </style>
                 // Button to start or stop the scanner
-            if !self.is_scanning {
-                <button onclick={toggle_scanner}>{ "Start Scanner" }</button>
-            } else {
-                <button onclick={&close_scanner}>{ "Stop Scanner" }</button>
-            }
+                if !self.is_scanning {
+                    <button onclick={toggle_scanner} title="Start Scanner" class="start-scanner">
+                        <i class="fas fa-qrcode"></i>
+                    </button>
+                }
             // Modal for the scanner
             if self.is_scanning {
-                <div class="modal">
-                    <div class="modal-content">
-                    <button onclick={&toggle_flashlight}>{ if self.is_flashlight_on { "Turn off Flashlight" } else { "Turn on Flashlight" } }</button> // Add this line
-                        <span class="close" onclick={&close_scanner}>{ "×" }</span>
-                        <video ref={&self.video_ref} autoPlay="true" style="width:300px;height:300px;" ontimeupdate={time_update}/>
+                <div class="active-scanner-ui">
+                    <div class="active-scanner-ui-content">
+                    <button class="toggle-flashlight" onclick={&toggle_flashlight} title="Turn on/off flashlight">
+                        <i class="fas fa-lightbulb"></i>
+                    </button> // Add this line
+                        <button class="close" onclick={&close_scanner}>{ "×" }</button>
+                        <video ref={&self.video_ref} autoPlay="true" ontimeupdate={time_update}/>
                         <canvas ref={&self.canvas_ref} width={video_width.to_string()} height={video_height.to_string()} style="display: none;"></canvas>
                     </div>
                 </div>
@@ -252,7 +217,7 @@ impl Component for Scanner {
 
                     video_constraints
                         .facing_mode(&VideoFacingModeEnum::Environment.into())
-                        .frame_rate(&20.into());
+                        .frame_rate(&10.into());
 
                     constraints.video(&video_constraints);
                     match window().navigator().media_devices() {
